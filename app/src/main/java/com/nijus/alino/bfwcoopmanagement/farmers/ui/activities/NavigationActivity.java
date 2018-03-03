@@ -25,6 +25,7 @@ import com.nijus.alino.bfwcoopmanagement.R;
 import com.nijus.alino.bfwcoopmanagement.farmers.adapter.NavigationRecyclerViewAdapter;
 import com.nijus.alino.bfwcoopmanagement.farmers.adapter.RecyclerItemTouchHelper;
 import com.nijus.alino.bfwcoopmanagement.farmers.sync.RefreshData;
+import com.nijus.alino.bfwcoopmanagement.farmers.ui.fragment.NavigationFragment;
 import com.nijus.alino.bfwcoopmanagement.ui.activities.BaseActivity;
 import com.nijus.alino.bfwcoopmanagement.ui.activities.SettingsActivity;
 import com.nijus.alino.bfwcoopmanagement.utils.Utils;
@@ -34,11 +35,12 @@ import static com.nijus.alino.bfwcoopmanagement.data.BfwContract.Farmer.CONTENT_
 
 public class NavigationActivity extends BaseActivity implements
         View.OnClickListener, SwipeRefreshLayout.OnRefreshListener, LoaderCallbacks<Cursor>,
-        RecyclerItemTouchHelper.RecyclerItemTouchHelperListener {
+        RecyclerItemTouchHelper.RecyclerItemTouchHelperListener, NavigationFragment.OnListFragmentInteractionListener {
 
     private NavigationRecyclerViewAdapter navigationRecyclerViewAdapter;
     private SwipeRefreshLayout mRefreshData;
     private CoordinatorLayout coordinatorLayout;
+    private LinearLayoutManager mLayoutManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,7 +54,8 @@ public class NavigationActivity extends BaseActivity implements
         View emptyView = findViewById(R.id.recyclerview_empty_farmer);
         Context context = this;
         RecyclerView recyclerView = findViewById(R.id.farmers_list);
-        recyclerView.setLayoutManager(new LinearLayoutManager(context));
+        mLayoutManager = new LinearLayoutManager(context);
+        recyclerView.setLayoutManager(mLayoutManager);
         recyclerView.setHasFixedSize(true);
 
         recyclerView.setItemAnimator(new DefaultItemAnimator());
@@ -61,6 +64,11 @@ public class NavigationActivity extends BaseActivity implements
         navigationRecyclerViewAdapter = new NavigationRecyclerViewAdapter(this, emptyView, new NavigationRecyclerViewAdapter.FarmerAdapterOnClickHandler() {
             @Override
             public void onClick(Long farmerId, NavigationRecyclerViewAdapter.ViewHolder vh) {
+            }
+        }, new NavigationRecyclerViewAdapter.FarmerAdapterOnLongClickListener() {
+            @Override
+            public void onLongClick(long item, long position, NavigationRecyclerViewAdapter.ViewHolder vh) {
+
             }
         });
 
@@ -81,6 +89,14 @@ public class NavigationActivity extends BaseActivity implements
     public void onClick(View view) {
         if (view.getId() == R.id.fab)
             startActivity(new Intent(this, CreateFarmerActivity.class));
+    }
+
+    @Override
+    public void onListFragmentInteraction(long item, NavigationRecyclerViewAdapter.ViewHolder vh) {
+
+        Intent intent = new Intent(this, DetailFarmerActivity.class);
+        intent.putExtra("farmerId", item);
+        startActivity(intent);
     }
 
     @Override
@@ -159,9 +175,5 @@ public class NavigationActivity extends BaseActivity implements
     @Override
     public void onSwiped(RecyclerView.ViewHolder viewHolder, int direction, int position) {
 
-    }
-
-    public interface OnListFragmentInteractionListener {
-        void onListFragmentInteraction(long item, NavigationRecyclerViewAdapter.ViewHolder vh);
     }
 }

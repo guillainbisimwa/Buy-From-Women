@@ -1,12 +1,11 @@
 package com.nijus.alino.bfwcoopmanagement.farmers.adapter;
 
-import android.content.ClipData;
 import android.content.Context;
-import android.content.Intent;
 import android.database.Cursor;
-import android.graphics.Color;
-import android.net.Uri;
+import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
+import android.util.SparseBooleanArray;
+import android.view.HapticFeedbackConstants;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -16,15 +15,10 @@ import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.nijus.alino.bfwcoopmanagement.R;
-import com.nijus.alino.bfwcoopmanagement.buyers.ui.activities.DetailBuyerActivity;
 import com.nijus.alino.bfwcoopmanagement.coops.helper.FlipAnimator;
 import com.nijus.alino.bfwcoopmanagement.data.BfwContract;
-import com.nijus.alino.bfwcoopmanagement.farmers.ui.activities.DetailFarmerActivity;
-import com.nijus.alino.bfwcoopmanagement.farmers.ui.fragment.NavigationFragment;
-import com.nijus.alino.bfwcoopmanagement.farmers.ui.fragment.dummy.DummyContents;
 
 import java.util.ArrayList;
-import java.util.List;
 
 public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<NavigationRecyclerViewAdapter.ViewHolder> {
 
@@ -32,12 +26,22 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
     final private Context mContext;
     final private View mEmptyView;
     final private FarmerAdapterOnClickHandler mClickHandler;
-    public List<Integer> listsSelectedItem = new ArrayList<>();
+    final private FarmerAdapterOnLongClickListener mOnLongClickListener;
 
-    public NavigationRecyclerViewAdapter(Context context, View view, FarmerAdapterOnClickHandler vh) {
+    private SparseBooleanArray selectedItems;
+    private SparseBooleanArray animationItemsIndex;
+    private SparseBooleanArray itemsValues;
+    private boolean reverseAllAnimations = false;
+    private static int currentSelectedIndex = -1;
+
+    public NavigationRecyclerViewAdapter(Context context, View view, FarmerAdapterOnClickHandler vh, FarmerAdapterOnLongClickListener vLong) {
         mContext = context;
         mEmptyView = view;
         mClickHandler = vh;
+        mOnLongClickListener = vLong;
+        selectedItems = new SparseBooleanArray();
+        animationItemsIndex = new SparseBooleanArray();
+        itemsValues = new SparseBooleanArray();
     }
 
     @Override
@@ -57,9 +61,7 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
         holder.mUname.setText(mCursor.getString(mCursor.getColumnIndex(BfwContract.Farmer.COLUMN_NAME)));
         holder.mUphone.setText(mCursor.getString(mCursor.getColumnIndex(BfwContract.Farmer.COLUMN_PHONE)));
 
-        holder.id_cursor_to_delete = mCursor.getString(mCursor.getColumnIndex(BfwContract.Farmer._ID));
-
-        //COLUMN_PHONE
+        holder.imagedone.setImageResource(R.drawable.ic_done_white_24dp);
 
         boolean isSync = mCursor.getLong(mCursor.getColumnIndex(BfwContract.Farmer.COLUMN_IS_SYNC)) == 1;
         if (isSync) {
@@ -67,6 +69,74 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
         } else {
             holder.imageView.setImageResource(R.drawable.ic_cloud_upload_black_24dp);
         }
+
+        applyIconAnimation(holder, position);
+    }
+
+    private void applyIconAnimation(ViewHolder holder, int position) {
+        if (selectedItems.get(position, false)) {
+            holder.iconFront.setVisibility(View.GONE);
+            holder.resetIconYAxis(holder.iconBack);
+            holder.iconBack.setVisibility(View.VISIBLE);
+            holder.iconBack.setAlpha(1);
+            if (currentSelectedIndex == position) {
+                FlipAnimator.flipView(mContext, holder.iconBack, holder.iconFront, true);
+                resetCurrentIndex();
+            }
+        } else {
+            holder.iconBack.setVisibility(View.GONE);
+            holder.resetIconYAxis(holder.iconFront);
+            holder.iconFront.setVisibility(View.VISIBLE);
+            holder.iconFront.setAlpha(1);
+            if ((reverseAllAnimations && animationItemsIndex.get(position, false)) || currentSelectedIndex == position) {
+                FlipAnimator.flipView(mContext, holder.iconBack, holder.iconFront, false);
+                resetCurrentIndex();
+            }
+        }
+    }
+
+    public void resetAnimationIndex() {
+        reverseAllAnimations = false;
+        animationItemsIndex.clear();
+    }
+
+    public void clearSelections() {
+        reverseAllAnimations = true;
+        selectedItems.clear();
+        itemsValues.clear();
+        notifyDataSetChanged();
+    }
+
+    public ArrayList<Integer> getSelectedItems() {
+        ArrayList<Integer> items =
+                new ArrayList<>(itemsValues.size());
+        for (int i = 0; i < itemsValues.size(); i++) {
+            items.add(itemsValues.keyAt(i));
+        }
+        return items;
+    }
+
+    private void resetCurrentIndex() {
+        currentSelectedIndex = -1;
+    }
+
+    public void toggleSelection(int pos) {
+        currentSelectedIndex = pos;
+
+        mCursor.moveToPosition(pos);
+
+        int id = mCursor.getInt(mCursor.getColumnIndex(BfwContract.Farmer._ID));
+
+        if (selectedItems.get(pos, false)) {
+            selectedItems.delete(pos);
+            animationItemsIndex.delete(pos);
+            itemsValues.delete(id);
+        } else {
+            selectedItems.put(pos, true);
+            animationItemsIndex.put(pos, true);
+            itemsValues.put(id, true);
+        }
+        notifyItemChanged(pos);
     }
 
     @Override
@@ -85,17 +155,23 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
         void onClick(Long farmerId, ViewHolder vh);
     }
 
+    public interface FarmerAdapterOnLongClickListener {
+        void onLongClick(long item, long position, NavigationRecyclerViewAdapter.ViewHolder vh);
+    }
+
+    public int getSelectedItemCount() {
+        return selectedItems.size();
+    }
+
     public class ViewHolder extends RecyclerView.ViewHolder implements View.OnClickListener, View.OnLongClickListener {
         public final View mView;
         public final ImageView farmerImage;
         public final TextView mUname;
         public final TextView mUphone;
-        public final ImageView imageView,imagedone;
-        public RelativeLayout viewBackground;
+        public final ImageView imageView, imagedone;
         public LinearLayout viewForeground;
-        public String id_cursor_to_delete;
         public RelativeLayout iconBack, iconFront, iconContainer;
-
+        private int position = 0;
 
         public ViewHolder(View view) {
             super(view);
@@ -104,12 +180,10 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
             mUname = view.findViewById(R.id.u_name);
             mUphone = view.findViewById(R.id.u_phone);
             imageView = view.findViewById(R.id.u_sync);
-            //id_cursor_to_delete = null;
 
             viewForeground = view.findViewById(R.id.view_foreground);
 
             imagedone = view.findViewById(R.id.image_done);
-            imagedone.setImageResource(R.drawable.ic_done_white_24dp);
 
             iconBack = view.findViewById(R.id.icon_back);
             iconFront = view.findViewById(R.id.icon_front);
@@ -126,51 +200,27 @@ public class NavigationRecyclerViewAdapter extends RecyclerView.Adapter<Navigati
             mCursor.moveToPosition(position);
             int farmerColumnIndex = mCursor.getColumnIndex(BfwContract.Farmer._ID);
             mClickHandler.onClick(mCursor.getLong(farmerColumnIndex), this);
-
-            //si click simple, appel de l'activity  details farmer
-            Intent intent = new Intent(mContext, DetailFarmerActivity.class);
-            intent.putExtra("farmerId", farmerColumnIndex);
-            mContext.startActivity(intent);
         }
-        private void resetIconYAxis(View view) {
+
+        @Override
+        public boolean onLongClick(View view) {
+
+            position = getAdapterPosition();
+
+            mCursor.moveToPosition(position);
+            int farmerColumnIndex = mCursor.getColumnIndex(BfwContract.Farmer._ID);
+
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+
+            mOnLongClickListener.onLongClick(mCursor.getLong(farmerColumnIndex), position, this);
+            return true;
+        }
+
+        public void resetIconYAxis(View view) {
             if (view.getRotationY() != 0) {
                 view.setRotationY(0);
             }
         }
 
-        @Override
-        public boolean onLongClick(View view) {
-            //annimation et delete un coop agent
-            if (!return_if_val_in_array(Integer.valueOf(this.getAdapterPosition()))) {
-                this.iconFront.setVisibility(View.GONE);
-                this.viewForeground.setBackgroundColor(Color.argb(20, 0, 0, 0));
-                resetIconYAxis(this.iconBack);
-                this.iconBack.setVisibility(View.VISIBLE);
-                this.iconBack.setAlpha(1);
-                FlipAnimator.flipView(mContext.getApplicationContext(), this.iconBack, this.iconFront, true);
-
-                listsSelectedItem.add(Integer.valueOf(this.getAdapterPosition()));
-
-            } else {
-                this.iconBack.setVisibility(View.GONE);
-                resetIconYAxis(this.iconFront);
-                this.viewForeground.setBackgroundColor(Color.argb(2, 0, 0, 0));
-                this.iconFront.setVisibility(View.VISIBLE);
-                this.iconFront.setAlpha(1);
-
-                FlipAnimator.flipView(mContext.getApplicationContext(), this.iconBack, this.iconFront, false);
-                listsSelectedItem.remove(Integer.valueOf(this.getAdapterPosition()));
-            }
-            return true;
-        }
-        boolean return_if_val_in_array(int val)
-        {
-            for (int v : listsSelectedItem){
-                if (val == v){
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 }

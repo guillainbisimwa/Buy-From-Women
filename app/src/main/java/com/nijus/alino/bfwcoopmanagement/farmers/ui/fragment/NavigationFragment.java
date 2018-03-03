@@ -2,6 +2,7 @@ package com.nijus.alino.bfwcoopmanagement.farmers.ui.fragment;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.support.design.widget.CoordinatorLayout;
@@ -21,8 +22,15 @@ import android.widget.Toast;
 
 import com.nijus.alino.bfwcoopmanagement.R;
 import com.nijus.alino.bfwcoopmanagement.data.BfwContract;
-import com.nijus.alino.bfwcoopmanagement.events.SaveDataEvent;
+import com.nijus.alino.bfwcoopmanagement.events.DisableFarmerSwipeEvent;
+import com.nijus.alino.bfwcoopmanagement.events.EventFarmerResetItems;
+import com.nijus.alino.bfwcoopmanagement.events.RefreshFarmerLoader;
+import com.nijus.alino.bfwcoopmanagement.events.RequestEventFarmerToDelete;
+import com.nijus.alino.bfwcoopmanagement.events.ResponseEventFarmerToDelete;
+import com.nijus.alino.bfwcoopmanagement.events.SaveLocalFarmerEvent;
 import com.nijus.alino.bfwcoopmanagement.events.SyncDataEvent;
+import com.nijus.alino.bfwcoopmanagement.events.ToggleFarmerRequestEvent;
+import com.nijus.alino.bfwcoopmanagement.events.ToggleFarmerResponseEvent;
 import com.nijus.alino.bfwcoopmanagement.farmers.adapter.NavigationRecyclerViewAdapter;
 import com.nijus.alino.bfwcoopmanagement.farmers.sync.RefreshData;
 import com.nijus.alino.bfwcoopmanagement.farmers.ui.activities.CreateFarmerActivity;
@@ -45,6 +53,9 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
     private NavigationRecyclerViewAdapter navigationRecyclerViewAdapter;
     private SwipeRefreshLayout mRefreshData;
     private CoordinatorLayout coordinatorLayout;
+    private RecyclerView mRecyclerView;
+    private LinearLayoutManager mLayoutManager;
+    private FloatingActionButton fab;
 
     public NavigationFragment() {
     }
@@ -73,26 +84,33 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
         View view = inflater.inflate(R.layout.activity_main2, container, false);
         View emptyView = view.findViewById(R.id.recyclerview_empty_farmer);
         Context context = view.getContext();
-        RecyclerView recyclerView = view.findViewById(R.id.farmers_list);
-        recyclerView.setLayoutManager(new LinearLayoutManager(context));
-        recyclerView.setHasFixedSize(true);
+        mRecyclerView = view.findViewById(R.id.farmers_list);
+        mLayoutManager = new LinearLayoutManager(context);
 
-        recyclerView.setItemAnimator(new DefaultItemAnimator());
+        mRecyclerView.setLayoutManager(mLayoutManager);
+        mRecyclerView.setHasFixedSize(true);
+
+        mRecyclerView.setItemAnimator(new DefaultItemAnimator());
 
         coordinatorLayout = view.findViewById(R.id.coordinator_layout);
 
         navigationRecyclerViewAdapter = new NavigationRecyclerViewAdapter(getContext(), emptyView, new NavigationRecyclerViewAdapter.FarmerAdapterOnClickHandler() {
             @Override
             public void onClick(Long farmerId, NavigationRecyclerViewAdapter.ViewHolder vh) {
-                // ((OnListFragmentInteractionListener) getActivity()).onListFragmentInteraction(farmerId, vh);
+                ((OnListFragmentInteractionListener) getActivity()).onListFragmentInteraction(farmerId, vh);
+            }
+        }, new NavigationRecyclerViewAdapter.FarmerAdapterOnLongClickListener() {
+            @Override
+            public void onLongClick(long item, long position, NavigationRecyclerViewAdapter.ViewHolder vh) {
+                ((OnLongClickFragmentInteractionListener) getActivity()).onLongClickFragmentInteractionListener(item, position, vh);
             }
         });
 
         mRefreshData = view.findViewById(R.id.refresh_data_done);
         mRefreshData.setOnRefreshListener(this);
 
-        recyclerView.setAdapter(navigationRecyclerViewAdapter);
-        FloatingActionButton fab = view.findViewById(R.id.fab);
+        mRecyclerView.setAdapter(navigationRecyclerViewAdapter);
+        fab = view.findViewById(R.id.fab);
         fab.setImageResource(R.drawable.ic_add_black_24dp);
         fab.setOnClickListener(this);
         return view;
@@ -105,10 +123,53 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
 
     }
 
+    @Subscribe
+    public void onToggleFarmerRequestEvent(ToggleFarmerRequestEvent farmerRequestEvent) {
+
+        navigationRecyclerViewAdapter.toggleSelection(farmerRequestEvent.getPosition());
+        int count = navigationRecyclerViewAdapter.getSelectedItemCount();
+
+        EventBus.getDefault().post(new ToggleFarmerResponseEvent(count));
+
+    }
+
+    @Subscribe
+    public void onRequestFarmerToDelete(RequestEventFarmerToDelete farmerToDelete) {
+
+        EventBus.getDefault().post(new ResponseEventFarmerToDelete(navigationRecyclerViewAdapter.getSelectedItems()));
+
+    }
+
+    @Subscribe
+    public void onDisableFarmerSwipeEvent(DisableFarmerSwipeEvent disableFarmerSwipeEvent) {
+
+        mRefreshData.setEnabled(false);
+        fab.setVisibility(View.INVISIBLE);
+
+    }
+
+    @Subscribe
+    public void onEventFarmerResetItems(EventFarmerResetItems eventFarmerResetItems) {
+        navigationRecyclerViewAdapter.clearSelections();
+        mRefreshData.setEnabled(true);
+        fab.setVisibility(View.VISIBLE);
+
+        mRecyclerView.post(new Runnable() {
+            @Override
+            public void run() {
+                navigationRecyclerViewAdapter.resetAnimationIndex();
+            }
+        });
+    }
+
     @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onSaveDataEvent(SaveDataEvent saveDataEvent) {
-        if (saveDataEvent.isSuccess())
-            getLoaderManager().restartLoader(0, null, this);
+    public void onSaveLocalFarmerEvent(SaveLocalFarmerEvent saveLocalFarmerEvent) {
+        getLoaderManager().restartLoader(0, null, this);
+    }
+
+    @Subscribe
+    public void onRefreshFarmerLoader(RefreshFarmerLoader farmerLoader) {
+        getLoaderManager().restartLoader(0, null, this);
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -130,7 +191,6 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
         } else {
             Toast.makeText(getContext(), getResources().getString(R.string.connectivity_error), Toast.LENGTH_LONG).show();
         }
-
     }
 
     @Override
@@ -147,8 +207,23 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
 
     @Override
     public Loader<Cursor> onCreateLoader(int id, Bundle args) {
-        return new CursorLoader(getActivity(), BfwContract.Farmer.CONTENT_URI, null, null, null,
-                null);
+
+        SharedPreferences prefs = getActivity().getSharedPreferences(getResources().getString(R.string.application_key),
+                Context.MODE_PRIVATE);
+        String groupName = prefs.getString(getResources().getString(R.string.g_name), "123");
+
+        if (groupName.equals("Agent")) {
+            int serverId = prefs.getInt(getResources().getString(R.string.coop_id), 1);
+
+            String farmerSelection = BfwContract.Farmer.TABLE_NAME + "." +
+                    BfwContract.Farmer.COLUMN_COOP_SERVER_ID + " =  ? ";
+            return new CursorLoader(getActivity(), BfwContract.Farmer.CONTENT_URI, null, farmerSelection, new String[]{Integer.toString(serverId)},
+                    null);
+        } else {
+            return new CursorLoader(getActivity(), BfwContract.Farmer.CONTENT_URI, null, null, null,
+                    null);
+        }
+
     }
 
     @Override
@@ -187,5 +262,9 @@ public class NavigationFragment extends Fragment implements LoaderManager.Loader
      */
     public interface OnListFragmentInteractionListener {
         void onListFragmentInteraction(long item, NavigationRecyclerViewAdapter.ViewHolder vh);
+    }
+
+    public interface OnLongClickFragmentInteractionListener {
+        void onLongClickFragmentInteractionListener(long item, long position, NavigationRecyclerViewAdapter.ViewHolder vh);
     }
 }
